@@ -1,4 +1,5 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
+use humantime::format_duration;
 use sqlite::{Connection, State};
 use std::env;
 
@@ -17,6 +18,13 @@ impl Mission {
             name,
             start_date,
             end_date: None,
+        }
+    }
+
+    fn time_spent(&self) -> Duration {
+        match self.end_date {
+            Some(end_date) => end_date - self.start_date,
+            None => Utc::now() - self.start_date,
         }
     }
 }
@@ -80,7 +88,11 @@ fn print_status(db: &Connection) {
                 .unwrap()
                 .with_timezone(&Utc);
         let mission = Mission::new(name, start_date);
-        println!("Active mission: {:?}", mission);
+        println!(
+            "Active mission: {:?} -> {}",
+            mission,
+            format_duration(mission.time_spent().to_std().unwrap())
+        );
     } else {
         println!("No active missions");
     }
