@@ -55,6 +55,10 @@ fn main() {
         if command == "ls" {
             list_missions(&db);
         }
+
+        if command == "resume" {
+            resume_latest_mission(&db);
+        }
     }
 }
 
@@ -89,8 +93,8 @@ fn print_status(db: &Connection) {
                 .with_timezone(&Utc);
         let mission = Mission::new(name, start_date);
         println!(
-            "Active mission: {:?} -> {}",
-            mission,
+            "Active mission: {} -> {}",
+            mission.name,
             format_duration(mission.time_spent().to_std().unwrap())
         );
     } else {
@@ -136,4 +140,13 @@ fn list_missions(db: &Connection) {
 
         println!("{:?}", mission);
     }
+}
+
+fn resume_latest_mission(db: &Connection) {
+    db.execute(
+        "UPDATE missions SET end_date = NULL WHERE id IN (SELECT id FROM missions ORDER BY start_date DESC LIMIT 1)",
+    )
+    .expect("Could not resume the latest mission");
+
+    println!("Last mission has been resumed if there was any");
 }
