@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
+use clap::{arg, Command};
 use humantime::format_duration;
 use sqlite::{Connection, State};
-use std::env;
 
 // A mission is a task with a name, start_date and end_date
 // A mission is considered `ongoing` whenever it has no `end_date`
@@ -35,30 +35,42 @@ fn main() {
     // Create table if it does not exist
     db.execute("CREATE TABLE IF NOT EXISTS missions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT)").unwrap();
 
-    let args: Vec<String> = env::args().collect();
+    let cmd = Command::new("tempo")
+        .about("Personal time tracking utility")
+        .version("0.1.0")
+        .subcommand_required(true)
+        .subcommand(
+            Command::new("start")
+                .about("Start a new mission")
+                .arg(arg!(<NAME> "The name of the mission"))
+                .arg_required_else_help(true),
+        )
+        .subcommand(Command::new("status").about("Show the current mission status"))
+        .subcommand(Command::new("stop").about("Stop all ongoing missions"))
+        .subcommand(Command::new("ls").about("List the missions"))
+        .subcommand(Command::new("resume").about("Resume the latest stopped mission"));
 
-    if args.len() > 1 {
-        let command = &args[1];
+    let matches = cmd.get_matches();
 
-        if command == "start" {
-            start_new_mission(&args[2], &db);
+    match matches.subcommand() {
+        Some(("start", arg_matches)) => {
+            if let Some(name) = arg_matches.get_one::<String>("NAME") {
+                start_new_mission(&name, &db);
+            }
         }
-
-        if command == "status" {
+        Some(("status", _)) => {
             print_status(&db);
         }
-
-        if command == "stop" {
+        Some(("stop", _)) => {
             stop_active_missions(&db);
         }
-
-        if command == "ls" {
+        Some(("ls", _)) => {
             list_missions(&db);
         }
-
-        if command == "resume" {
+        Some(("resume", _)) => {
             resume_latest_mission(&db);
         }
+        _ => unreachable!(),
     }
 }
 
@@ -76,7 +88,7 @@ fn start_new_mission(name: &String, db: &Connection) {
 
     stmt.next().expect("Failed to insert mission into db");
 
-    println!("New mission started: {:?}", mission);
+    println!("New mission started: {}", mission.name);
 }
 
 // Prints out the latest active mission

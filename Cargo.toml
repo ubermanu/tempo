@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4.31"
+clap = "4.4.10"
 humantime = "2.1.0"
 sqlite = "0.32.0"
