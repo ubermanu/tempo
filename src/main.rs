@@ -2,6 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 use clap::{arg, Command};
 use humantime::format_duration;
 use sqlite::{Connection, State};
+use tabled::{builder::Builder, settings::Style};
 
 // A mission is a task with a name, start_date and end_date
 // A mission is considered `ongoing` whenever it has no `end_date`
@@ -21,11 +22,12 @@ impl Mission {
         }
     }
 
-    fn time_spent(&self) -> Duration {
-        match self.end_date {
+    fn elapsed_time(&self) -> Duration {
+        let duration = match self.end_date {
             Some(end_date) => end_date - self.start_date,
             None => Utc::now() - self.start_date,
-        }
+        };
+        Duration::seconds(duration.num_seconds())
     }
 }
 
@@ -55,7 +57,8 @@ fn main() {
     match matches.subcommand() {
         Some(("start", arg_matches)) => {
             if let Some(name) = arg_matches.get_one::<String>("NAME") {
-                start_new_mission(&name, &db);
+                let mission = start_new_mission(&name, &db);
+                println!("New mission started: {}", mission.name);
             }
         }
         Some(("status", _)) => {
@@ -63,19 +66,24 @@ fn main() {
         }
         Some(("stop", _)) => {
             stop_active_missions(&db);
+            println!("All ongoing missions have been stopped");
         }
         Some(("ls", _)) => {
             list_missions(&db);
         }
         Some(("resume", _)) => {
             resume_latest_mission(&db);
+            println!("Last mission has been resumed if there was any");
         }
         _ => unreachable!(),
     }
 }
 
 // Starts a new mission
-fn start_new_mission(name: &String, db: &Connection) {
+// Stops all the active missions before hand so theres anly one running
+fn start_new_mission(name: &String, db: &Connection) -> Mission {
+    stop_active_missions(&db);
+
     let mission = Mission::new(name.to_string(), Utc::now());
 
     let mut stmt = db
@@ -88,13 +96,13 @@ fn start_new_mission(name: &String, db: &Connection) {
 
     stmt.next().expect("Failed to insert mission into db");
 
-    println!("New mission started: {}", mission.name);
+    mission
 }
 
 // Prints out the latest active mission
 fn print_status(db: &Connection) {
     let mut stmt = db
-        .prepare("SELECT * FROM missions WHERE end_date IS NULL LIMIT 1")
+        .prepare("SELECT * FROM missions WHERE end_date IS NULL ORDER BY start_date DESC LIMIT 1")
         .unwrap();
 
     if let Ok(State::Row) = stmt.next() {
@@ -105,12 +113,12 @@ fn print_status(db: &Connection) {
                 .with_timezone(&Utc);
         let mission = Mission::new(name, start_date);
         println!(
-            "Active mission: {} -> {}",
+            "{} ({})",
             mission.name,
-            format_duration(mission.time_spent().to_std().unwrap())
+            format_duration(mission.elapsed_time().to_std().unwrap())
         );
     } else {
-        println!("No active missions");
+        println!("No active mission");
     }
 }
 
@@ -123,12 +131,15 @@ fn stop_active_missions(db: &Connection) {
         .unwrap();
 
     stmt.next().expect("Failed to stop the missions");
-
-    println!("All ongoing missions have been stopped");
 }
 
 fn list_missions(db: &Connection) {
-    let mut stmt = db.prepare("SELECT * from missions").unwrap();
+    let mut stmt = db
+        .prepare("SELECT * from missions ORDER BY id DESC")
+        .unwrap();
+
+    let mut builder = Builder::default();
+    builder.set_header(["", "Name", "Started At", "Ended At", "Duration"]);
 
     while let Ok(State::Row) = stmt.next() {
         let name = stmt.read::<String, _>("name").unwrap();
@@ -150,8 +161,30 @@ fn list_missions(db: &Connection) {
         let mut mission = Mission::new(name, start_date);
         mission.end_date = end_date;
 
-        println!("{:?}", mission);
+        let formatted_end_date = match mission.end_date {
+            Some(date) => date.format("%d/%m/%Y %H:%M:%S").to_string(),
+            None => String::new(),
+        };
+
+        builder.push_record([
+            if end_date.is_none() { "⏺" } else { "" },
+            mission.name.as_str(),
+            mission
+                .start_date
+                .format("%d/%m/%Y %H:%M:%S")
+                .to_string()
+                .as_str(),
+            formatted_end_date.as_str(),
+            format_duration(mission.elapsed_time().to_std().unwrap())
+                .to_string()
+                .as_str(),
+        ]);
     }
+
+    let mut table = builder.build();
+    table.with(Style::rounded());
+
+    println!("{}", table);
 }
 
 fn resume_latest_mission(db: &Connection) {
@@ -159,6 +192,4 @@ fn resume_latest_mission(db: &Connection) {
         "UPDATE missions SET end_date = NULL WHERE id IN (SELECT id FROM missions ORDER BY start_date DESC LIMIT 1)",
     )
     .expect("Could not resume the latest mission");
-
-    println!("Last mission has been resumed if there was any");
 }
