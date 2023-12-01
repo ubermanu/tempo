@@ -1,4 +1,5 @@
 use core::panic;
+use std::{env, fs::create_dir_all, path::PathBuf};
 
 use chrono::{DateTime, Duration, Utc};
 use clap::{arg, Command};
@@ -33,13 +34,14 @@ impl Mission {
     }
 }
 
-// Get the path to the db file from the config
-// TODO: Add tag list into the configuration file
-const CONFIG_PATH: &str = "~/.config/tempo/config.toml";
+// Get the path to the db file
+const DEFAULT_DB_PATH: &str = "~/.local/share/tempo/tempo.db";
 
 // TODO: Add export command to generate a CSV of the data range
 fn main() {
-    let db = Connection::open("tempo.db").expect("Failed to open the database");
+    ensure_db_path();
+
+    let db = Connection::open(get_db_path()).expect("Failed to open the database");
 
     // Create table if it does not exist
     db.execute("CREATE TABLE IF NOT EXISTS missions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT)").unwrap();
@@ -97,6 +99,21 @@ fn main() {
         }
         _ => unreachable!(),
     }
+}
+
+// Get the path to the DB from env or the default one
+fn get_db_path() -> String {
+    match env::var("TEMPO_DB_PATH") {
+        Ok(value) => value,
+        Err(_) => String::from(DEFAULT_DB_PATH),
+    }
+}
+
+// Make sure that the path to the db file exists
+fn ensure_db_path() {
+    let path = PathBuf::from(get_db_path());
+    let dir = path.parent().unwrap();
+    create_dir_all(dir).unwrap();
 }
 
 // Starts a new mission
@@ -292,8 +309,8 @@ fn print_report(db: &Connection, from: &String) {
 }
 
 fn print_info(db: &Connection) {
-    println!("Config:");
-    println!(" Path: {}", CONFIG_PATH);
+    println!("Database:");
+    println!(" Path: {}", get_db_path());
     println!();
 
     // TODO: Use count(*)
