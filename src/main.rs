@@ -51,13 +51,12 @@ fn main() {
         )
         .subcommand(Command::new("status").about("Show the current mission status"))
         .subcommand(Command::new("stop").about("Stop all ongoing missions"))
-        .subcommand(Command::new("ls").about("List the missions"))
         .subcommand(Command::new("resume").about("Resume the latest stopped mission"))
         .subcommand(
-            Command::new("report")
-                .about("Prints out an activity report")
-                .arg(arg!(<FROM> "The start of the date range"))
-                .arg_required_else_help(true),
+            Command::new("ls")
+                .about("List the missions")
+                .arg(arg!(--from <FROM> "The start of the selection date range"))
+                .arg_required_else_help(false),
         );
 
     let matches = cmd.get_matches();
@@ -76,16 +75,15 @@ fn main() {
             stop_active_missions(&db);
             println!("All ongoing missions have been stopped");
         }
-        Some(("ls", _)) => {
-            list_missions(&db);
-        }
         Some(("resume", _)) => {
             resume_latest_mission(&db);
             println!("Last mission has been resumed if there was any");
         }
-        Some(("report", arg_matches)) => {
-            if let Some(from) = arg_matches.get_one::<String>("FROM") {
+        Some(("ls", arg_matches)) => {
+            if let Some(from) = arg_matches.get_one::<String>("from") {
                 print_report(&db, &from);
+            } else {
+                list_missions(&db);
             }
         }
         _ => unreachable!(),
