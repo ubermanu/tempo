@@ -1,3 +1,5 @@
+use core::panic;
+
 use chrono::{DateTime, Duration, Utc};
 use clap::{arg, Command};
 use humantime::format_duration;
@@ -50,7 +52,13 @@ fn main() {
         .subcommand(Command::new("status").about("Show the current mission status"))
         .subcommand(Command::new("stop").about("Stop all ongoing missions"))
         .subcommand(Command::new("ls").about("List the missions"))
-        .subcommand(Command::new("resume").about("Resume the latest stopped mission"));
+        .subcommand(Command::new("resume").about("Resume the latest stopped mission"))
+        .subcommand(
+            Command::new("report")
+                .about("Prints out an activity report")
+                .arg(arg!(<FROM> "The start of the date range"))
+                .arg_required_else_help(true),
+        );
 
     let matches = cmd.get_matches();
 
@@ -74,6 +82,11 @@ fn main() {
         Some(("resume", _)) => {
             resume_latest_mission(&db);
             println!("Last mission has been resumed if there was any");
+        }
+        Some(("report", arg_matches)) => {
+            if let Some(from) = arg_matches.get_one::<String>("FROM") {
+                print_report(&db, &from);
+            }
         }
         _ => unreachable!(),
     }
@@ -192,4 +205,81 @@ fn resume_latest_mission(db: &Connection) {
         "UPDATE missions SET end_date = NULL WHERE id IN (SELECT id FROM missions ORDER BY start_date DESC LIMIT 1)",
     )
     .expect("Could not resume the latest mission");
+}
+
+fn print_report(db: &Connection, from: &String) {
+    // TODO: Get a slice of missions for the given range
+    // TODO: Accept strings as date range (e.g last month, yesterday, ...)
+    // let mut stmt = db.prepare("SELECT * FROM missions WHERE start_date");
+
+    let now = Utc::now().timestamp();
+    let tz = timelib::Timezone::parse("UTC").unwrap();
+    let ts = timelib::strtotime(from.as_str(), Some(now), &tz).unwrap();
+    let from_date = DateTime::from_timestamp(ts, 0);
+
+    if let Some(date) = from_date {
+        if now <= ts {
+            panic!("The date range should start from a past date");
+        }
+
+        let mut stmt = db
+            .prepare("SELECT * FROM missions WHERE start_date >= :start_date OR end_date IS NULL ORDER BY start_date DESC")
+            .unwrap();
+
+        stmt.bind((":start_date", date.to_rfc3339().to_string().as_str()))
+            .unwrap();
+
+        // TODO: Massive duplicate from the list action
+        let mut builder = Builder::default();
+        builder.set_header(["", "Name", "Started At", "Ended At", "Duration"]);
+
+        while let Ok(State::Row) = stmt.next() {
+            let name = stmt.read::<String, _>("name").unwrap();
+            let start_date = DateTime::parse_from_rfc3339(
+                stmt.read::<String, _>("start_date").unwrap().as_str(),
+            )
+            .unwrap()
+            .with_timezone(&Utc);
+
+            let end_date: Option<DateTime<Utc>> =
+                match stmt.read::<Option<String>, _>("end_date").unwrap() {
+                    Some(end_date_str) => Some(
+                        DateTime::parse_from_rfc3339(&end_date_str)
+                            .unwrap()
+                            .with_timezone(&Utc),
+                    ),
+                    None => None,
+                };
+
+            let mut mission = Mission::new(name, start_date);
+            mission.end_date = end_date;
+
+            let formatted_end_date = match mission.end_date {
+                Some(date) => date.format("%d/%m/%Y %H:%M:%S").to_string(),
+                None => String::new(),
+            };
+
+            builder.push_record([
+                if end_date.is_none() { "⏺" } else { "" },
+                mission.name.as_str(),
+                mission
+                    .start_date
+                    .format("%d/%m/%Y %H:%M:%S")
+                    .to_string()
+                    .as_str(),
+                formatted_end_date.as_str(),
+                format_duration(mission.elapsed_time().to_std().unwrap())
+                    .to_string()
+                    .as_str(),
+            ]);
+        }
+
+        if builder.count_rows() > 0 {
+            let mut table = builder.build();
+            table.with(Style::rounded());
+            println!("{}", table);
+        } else {
+            println!("Could not find any missions for the provided time range");
+        }
+    }
 }
