@@ -33,6 +33,11 @@ impl Mission {
     }
 }
 
+// Get the path to the db file from the config
+// TODO: Add tag list into the configuration file
+const CONFIG_PATH: &str = "~/.config/tempo/config.toml";
+
+// TODO: Add export command to generate a CSV of the data range
 fn main() {
     let db = Connection::open("tempo.db").expect("Failed to open the database");
 
@@ -57,7 +62,8 @@ fn main() {
                 .about("List the missions")
                 .arg(arg!(--from <FROM> "The start of the selection date range"))
                 .arg_required_else_help(false),
-        );
+        )
+        .subcommand(Command::new("info").about("Print system information"));
 
     let matches = cmd.get_matches();
 
@@ -85,6 +91,9 @@ fn main() {
             } else {
                 list_missions(&db);
             }
+        }
+        Some(("info", _)) => {
+            print_info(&db);
         }
         _ => unreachable!(),
     }
@@ -280,4 +289,35 @@ fn print_report(db: &Connection, from: &String) {
             println!("Could not find any missions for the provided time range");
         }
     }
+}
+
+fn print_info(db: &Connection) {
+    println!("Config:");
+    println!(" Path: {}", CONFIG_PATH);
+    println!();
+
+    // TODO: Use count(*)
+    let count = db
+        .prepare("SELECT id FROM missions")
+        .unwrap()
+        .into_iter()
+        .count();
+
+    println!("Missions: {}", count);
+
+    let active = db
+        .prepare("SELECT id FROM missions where end_date IS NULL")
+        .unwrap()
+        .into_iter()
+        .count();
+
+    println!(" Running: {}", active);
+
+    let finished = db
+        .prepare("SELECT id FROM missions where end_date IS NOT NULL")
+        .unwrap()
+        .into_iter()
+        .count();
+
+    println!(" Finished: {}", finished);
 }
