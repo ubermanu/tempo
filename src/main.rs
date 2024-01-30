@@ -4,6 +4,7 @@ use std::{env, fs::create_dir_all, path::PathBuf};
 use chrono::{DateTime, Duration, Utc};
 use clap::{arg, Command};
 use humantime::format_duration;
+use shellexpand;
 use sqlite::{Connection, State};
 use tabled::{builder::Builder, settings::Style};
 
@@ -105,7 +106,7 @@ fn main() {
 fn get_db_path() -> String {
     match env::var("TEMPO_DB_PATH") {
         Ok(value) => value,
-        Err(_) => String::from(DEFAULT_DB_PATH),
+        Err(_) => shellexpand::full(DEFAULT_DB_PATH).unwrap().to_string(),
     }
 }
 
