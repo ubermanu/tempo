@@ -171,9 +171,10 @@ fn stop_active_missions(db: &Connection) {
     stmt.next().expect("Failed to stop the missions");
 }
 
+// TODO: Add an option "-n" to limit the rows
 fn list_missions(db: &Connection) {
     let mut stmt = db
-        .prepare("SELECT * from missions ORDER BY id DESC")
+        .prepare("SELECT * from missions ORDER BY id DESC LIMIT 10")
         .unwrap();
 
     let mut builder = Builder::default();
